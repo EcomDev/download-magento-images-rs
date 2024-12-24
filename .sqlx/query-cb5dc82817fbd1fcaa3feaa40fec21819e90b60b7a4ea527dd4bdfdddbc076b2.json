@@ -1,0 +1,24 @@
+{
+  "db_name": "MySQL",
+  "query": "SELECT value as `value!` FROM catalog_product_entity_media_gallery WHERE value_id BETWEEN ? AND ?",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "value!",
+        "type_info": {
+          "type": "VarString",
+          "flags": "",
+          "max_size": 1020
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "cb5dc82817fbd1fcaa3feaa40fec21819e90b60b7a4ea527dd4bdfdddbc076b2"
+}

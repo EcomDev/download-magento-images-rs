@@ -1,0 +1,34 @@
+{
+  "db_name": "MySQL",
+  "query": "SELECT MIN(value_id) as `min!`, MAX(value_id) as `max!` FROM catalog_product_entity_media_gallery GROUP BY CEIL(value_id / ?)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "min!",
+        "type_info": {
+          "type": "Long",
+          "flags": "UNSIGNED | BINARY",
+          "max_size": 10
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "max!",
+        "type_info": {
+          "type": "Long",
+          "flags": "UNSIGNED | BINARY",
+          "max_size": 10
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "071f05b235745d98764840276ecba417d360c78e9db7855f7422e319659bca24"
+}
