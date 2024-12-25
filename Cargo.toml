@@ -11,7 +11,7 @@ rust-version = "1.80.0"
 [dependencies]
 sqlx = { version = "0.8.2", features = ["mysql", "runtime-tokio-rustls", "macros"] }
 tokio = { version = "1", features = ["macros"] }
-reqwest = { version = "0.12.4", features = ["rustls-tls"]}
+reqwest = { version = "0.12.4", default-features = false, features = ["h2", "rustls-tls-webpki-roots", "brotli", "gzip"]}
 indicatif = "0.17.8"
 clap = {  version = "4", features = ["derive"] }
 anyhow = { version = "1" }
