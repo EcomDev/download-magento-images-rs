@@ -70,7 +70,7 @@ jobs:
 
   deny-check:
     name: cargo-deny check
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     continue-on-error: ${{ matrix.checks == 'advisories' }}
     strategy:
       matrix:
