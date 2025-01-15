@@ -91,8 +91,8 @@ impl HttpPool {
                 let config = config.clone();
                 async move {
                     let image_path = Path::new(&image);
-                    let download_url = config.image_url(&image_path);
-                    let file_path = config.file_path(&image_path);
+                    let download_url = config.image_url(image_path);
+                    let file_path = config.file_path(image_path);
 
                     if try_exists(&file_path).await.unwrap_or(false) {
                         return TaskResult::Skipped(image, client)
@@ -108,11 +108,10 @@ impl HttpPool {
                         return TaskResult::Error(format!("{image} - {}", status.as_str()), client);
                     }
 
-                    match file_path.parent() {
-                        Some(path) => if let Err(_) = create_dir_all(path).await {
+                    if let Some(path) = file_path.parent() {
+                        if create_dir_all(path).await.is_err() {
                             return TaskResult::Error(image, client);
-                        },
-                        None => {}
+                        }
                     }
 
                     let mut file = match File::create(&file_path).await {
@@ -121,7 +120,7 @@ impl HttpPool {
                     };
 
                     while let Ok(Some(chunk)) = response.chunk().await {
-                        if let Err(_) = file.write_all(chunk.as_ref()).await {
+                        if (file.write_all(chunk.as_ref()).await).is_err() {
                             return TaskResult::Error(image, client);
                         }
                     }
