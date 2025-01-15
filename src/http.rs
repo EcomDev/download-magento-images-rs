@@ -1,22 +1,25 @@
+use reqwest::Client;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use reqwest::Client;
-use tokio::task::JoinSet;
-use tokio::fs::{ File, create_dir_all, try_exists };
+use tokio::fs::{create_dir_all, try_exists, File};
 use tokio::io::AsyncWriteExt;
+use tokio::task::JoinSet;
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum BaseUrl {
     External(String),
-    MagentoMedia(String)
+    MagentoMedia(String),
 }
 
-impl <T> From<T> for BaseUrl where T : AsRef<str> {
+impl<T> From<T> for BaseUrl
+where
+    T: AsRef<str>,
+{
     fn from(v: T) -> Self {
         let v = v.as_ref().trim_end_matches('/');
 
         if v.ends_with("/media") {
-            return BaseUrl::MagentoMedia(v.to_string())
+            return BaseUrl::MagentoMedia(v.to_string());
         }
 
         BaseUrl::External(v.to_string())
@@ -41,27 +44,27 @@ pub(crate) trait DownloadProgress {
 enum TaskResult {
     Success(String, Client),
     Skipped(String, Client),
-    Error(String, Client)
+    Error(String, Client),
 }
 
 pub(crate) struct HttpPool {
     pool: Vec<Client>,
-    tasks: JoinSet<TaskResult>
+    tasks: JoinSet<TaskResult>,
 }
 
 impl HttpPool {
     pub(crate) fn new() -> Self {
         Self {
             pool: Vec::new(),
-            tasks: JoinSet::new()
+            tasks: JoinSet::new(),
         }
     }
 
     pub(crate) async fn download(
         &mut self,
-        images: impl Iterator<Item=String>,
+        images: impl Iterator<Item = String>,
         progress: &mut impl DownloadProgress,
-        config: Arc<DownloadConfig>
+        config: Arc<DownloadConfig>,
     ) -> Result<(), anyhow::Error> {
         for image in images {
             if config.is_full((self.tasks.len() + self.pool.len()) as u16) {
@@ -69,22 +72,22 @@ impl HttpPool {
                     Some(Ok(TaskResult::Success(image, client))) => {
                         progress.completed(image);
                         self.pool.push(client);
-                    },
+                    }
                     Some(Ok(TaskResult::Error(image, client))) => {
                         progress.error(image);
                         self.pool.push(client);
-                    },
+                    }
                     Some(Ok(TaskResult::Skipped(image, client))) => {
                         progress.skipped(image);
                         self.pool.push(client);
-                    },
+                    }
                     _ => {}
                 }
             }
 
             let client = match self.pool.pop() {
                 Some(client) => client,
-                None => Client::builder().user_agent(&config.user_agent).build()?
+                None => Client::builder().user_agent(&config.user_agent).build()?,
             };
 
             self.tasks.spawn({
@@ -95,12 +98,12 @@ impl HttpPool {
                     let file_path = config.file_path(image_path);
 
                     if try_exists(&file_path).await.unwrap_or(false) {
-                        return TaskResult::Skipped(image, client)
+                        return TaskResult::Skipped(image, client);
                     }
 
                     let mut response = match client.get(download_url).send().await {
                         Ok(response) => response,
-                        Err(_) => return TaskResult::Error(image, client)
+                        Err(_) => return TaskResult::Error(image, client),
                     };
 
                     let status = response.status();
@@ -116,7 +119,7 @@ impl HttpPool {
 
                     let mut file = match File::create(&file_path).await {
                         Ok(file) => file,
-                        Err(_) => return TaskResult::Error(image, client)
+                        Err(_) => return TaskResult::Error(image, client),
                     };
 
                     while let Ok(Some(chunk)) = response.chunk().await {
@@ -147,8 +150,11 @@ impl DownloadConfig {
 
     fn image_url(&self, image: &Path) -> String {
         let (base_url, path) = match &self.base_url {
-            BaseUrl::External(base_url) => (base_url, PathBuf::from(image.file_name().unwrap_or_default())),
-            BaseUrl::MagentoMedia(base_url) => (base_url, relative_path(image))
+            BaseUrl::External(base_url) => (
+                base_url,
+                PathBuf::from(image.file_name().unwrap_or_default()),
+            ),
+            BaseUrl::MagentoMedia(base_url) => (base_url, relative_path(image)),
         };
 
         format!("{base_url}/{}", path.to_string_lossy())

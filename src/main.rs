@@ -1,10 +1,10 @@
 mod http;
 
-use std::sync::Arc;
+use crate::http::{DownloadConfig, DownloadProgress, HttpPool};
 use clap::Parser;
 use indicatif::ProgressBar;
 use sqlx::{Connection, MySqlConnection};
-use crate::http::{DownloadConfig, DownloadProgress, HttpPool};
+use std::sync::Arc;
 
 #[derive(Parser)]
 struct Options {
@@ -15,7 +15,11 @@ struct Options {
     base_path: String,
 
     /// User agent
-    #[arg(short = 'u', long, default_value = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0")]
+    #[arg(
+        short = 'u',
+        long,
+        default_value = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0"
+    )]
     user_agent: String,
 
     /// Max number of clients to create for downloading
@@ -26,17 +30,19 @@ struct Options {
     #[arg(short = 'b', long, default_value_t = 10000)]
     batch_size: u16,
 
-    #[arg(short = 'd', long, default_value = "mysql://magento:magento@localhost/magento")]
+    #[arg(
+        short = 'd',
+        long,
+        default_value = "mysql://magento:magento@localhost/magento"
+    )]
     /// Database URL to use of connection
     database_url: String,
 }
 
-
 async fn total(connection: &mut MySqlConnection) -> sqlx::Result<u64> {
-
     #[derive(sqlx::Type)]
     struct Total {
-        total: i64
+        total: i64,
     }
 
     let query = sqlx::query_as!(
@@ -47,10 +53,15 @@ async fn total(connection: &mut MySqlConnection) -> sqlx::Result<u64> {
     Ok(query.fetch_one(connection).await?.total as u64)
 }
 
-async fn ranges(connection: &mut MySqlConnection, batch_size: u16) -> sqlx::Result<Vec<(u64, u64)>>  {
-
+async fn ranges(
+    connection: &mut MySqlConnection,
+    batch_size: u16,
+) -> sqlx::Result<Vec<(u64, u64)>> {
     #[derive(sqlx::Type)]
-    struct MinMax { min: i64, max: i64 }
+    struct MinMax {
+        min: i64,
+        max: i64,
+    }
 
     let query = sqlx::query_as!(
         MinMax,
@@ -58,7 +69,12 @@ async fn ranges(connection: &mut MySqlConnection, batch_size: u16) -> sqlx::Resu
         batch_size
     );
 
-    Ok(query.fetch_all(connection).await?.into_iter().map(|item| (item.min as u64, item.max as u64)).collect())
+    Ok(query
+        .fetch_all(connection)
+        .await?
+        .into_iter()
+        .map(|item| (item.min as u64, item.max as u64))
+        .collect())
 }
 
 impl DownloadProgress for ProgressBar {
@@ -93,7 +109,7 @@ async fn main() -> anyhow::Result<()> {
     });
 
     struct Image {
-        value: String
+        value: String,
     }
 
     for (min, max) in ranges(&mut connection, options.batch_size).await? {
@@ -104,8 +120,13 @@ async fn main() -> anyhow::Result<()> {
             max
         );
 
-        let images = query.fetch_all(&mut connection).await?.into_iter().map(|v| v.value);
-        http.download(images, &mut progress_bar, download_config.clone()).await?
+        let images = query
+            .fetch_all(&mut connection)
+            .await?
+            .into_iter()
+            .map(|v| v.value);
+        http.download(images, &mut progress_bar, download_config.clone())
+            .await?
     }
 
     progress_bar.finish();
