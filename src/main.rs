@@ -4,7 +4,7 @@ use std::sync::Arc;
 use clap::Parser;
 use indicatif::ProgressBar;
 use sqlx::{Connection, MySqlConnection};
-use crate::http::{BaseUrl, DownloadConfig, DownloadProgress, HttpPool};
+use crate::http::{DownloadConfig, DownloadProgress, HttpPool};
 
 #[derive(Parser)]
 struct Options {
@@ -86,7 +86,7 @@ async fn main() -> anyhow::Result<()> {
     let mut progress_bar = ProgressBar::new(total(&mut connection).await?);
 
     let download_config = Arc::new(DownloadConfig {
-        base_url: BaseUrl::External(options.base_url),
+        base_url: options.base_url.into(),
         base_path: options.base_path,
         user_agent: options.user_agent,
         clients: options.max_clients,

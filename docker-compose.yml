@@ -1,0 +1,5 @@
+services:
+  mysql:
+    image: ghcr.io/ecomdev/testcontainer-magento-data/mysql:latest-sampledata
+    ports:
+      - 3306:3306

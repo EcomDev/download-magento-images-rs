@@ -5,9 +5,22 @@ use tokio::task::JoinSet;
 use tokio::fs::{ File, create_dir_all, try_exists };
 use tokio::io::AsyncWriteExt;
 
+#[derive(Debug, PartialEq)]
 pub(crate) enum BaseUrl {
     External(String),
     MagentoMedia(String)
+}
+
+impl <T> From<T> for BaseUrl where T : AsRef<str> {
+    fn from(v: T) -> Self {
+        let v = v.as_ref().trim_end_matches('/');
+
+        if v.ends_with("/media") {
+            return BaseUrl::MagentoMedia(v.to_string())
+        }
+
+        BaseUrl::External(v.to_string())
+    }
 }
 
 pub(crate) struct DownloadConfig {
@@ -146,5 +159,30 @@ impl DownloadConfig {
         let mut path_buf = PathBuf::from(&self.base_path);
         path_buf.push(relative_path(image));
         path_buf
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn creates_base_url_from_string_as_relative_path() {
+        let base_url: BaseUrl = "http://some-magento.com/media/".into();
+
+        assert_eq!(
+            BaseUrl::MagentoMedia("http://some-magento.com/media".into()),
+            base_url
+        );
+    }
+
+    #[test]
+    fn creates_base_url_as_external_when_no_media_path_exists() {
+        let base_url: BaseUrl = "http://some-magento.com/test-folder/".into();
+
+        assert_eq!(
+            BaseUrl::External("http://some-magento.com/test-folder".into()),
+            base_url
+        );
     }
 }
