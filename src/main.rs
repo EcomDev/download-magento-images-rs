@@ -3,7 +3,7 @@ mod http;
 use crate::http::{DownloadConfig, DownloadProgress, HttpPool};
 use clap::Parser;
 use indicatif::ProgressBar;
-use sqlx::{Connection, MySqlConnection};
+use sqlx::{Connection, MySqlConnection, Row};
 use std::sync::Arc;
 
 #[derive(Parser)]
@@ -34,6 +34,10 @@ struct Options {
     #[arg(short = 'v', long, default_value_t = false)]
     verbose: bool,
 
+    /// Download category images instead of product images
+    #[arg(short = 'g', long, default_value_t = false)]
+    category_images: bool,
+
     #[arg(
         short = 'd',
         long,
@@ -43,42 +47,86 @@ struct Options {
     database_url: String,
 }
 
-async fn total(connection: &mut MySqlConnection) -> sqlx::Result<u64> {
-    #[derive(sqlx::Type)]
-    struct Total {
-        total: i64,
+async fn total(connection: &mut MySqlConnection, category_images: bool) -> sqlx::Result<u64> {
+    if category_images {
+        // First get the attribute_id for category images
+        let attribute_id = get_category_image_attribute_id(connection).await?;
+
+        let row = sqlx::query(
+            "SELECT COUNT(*) as total FROM catalog_category_entity_varchar WHERE attribute_id = ? AND value IS NOT NULL AND value != ''"
+        )
+        .bind(attribute_id)
+        .fetch_one(connection)
+        .await?;
+
+        let count = row.get::<i64, _>("total") as u64;
+        println!("Found {} category images", count);
+        Ok(count)
+    } else {
+        let row = sqlx::query(
+            "SELECT COUNT(*) as total FROM catalog_product_entity_media_gallery"
+        )
+        .fetch_one(connection)
+        .await?;
+
+        let count = row.get::<i64, _>("total") as u64;
+        println!("Found {} product images", count);
+        Ok(count)
     }
+}
 
-    let query = sqlx::query_as!(
-        Total,
-        "SELECT COUNT(*) as total FROM catalog_product_entity_media_gallery"
-    );
+async fn get_category_image_attribute_id(connection: &mut MySqlConnection) -> sqlx::Result<u16> {
+    println!("Fetching category image attribute ID...");
+    let row = sqlx::query(
+        "SELECT attribute_id FROM eav_attribute WHERE attribute_code = 'image' AND entity_type_id = 3"
+    )
+    .fetch_one(connection)
+    .await?;
 
-    Ok(query.fetch_one(connection).await?.total as u64)
+    let attribute_id = row.get::<u16, _>("attribute_id");
+    println!("Found category image attribute ID: {}", attribute_id);
+
+    Ok(attribute_id)
 }
 
 async fn ranges(
     connection: &mut MySqlConnection,
     batch_size: u16,
+    category_images: bool,
 ) -> sqlx::Result<Vec<(u64, u64)>> {
-    #[derive(sqlx::Type)]
-    struct MinMax {
-        min: i64,
-        max: i64,
-    }
+    if category_images {
+        // For category images, we'll use the value_id from catalog_category_entity_varchar
+        // First get the attribute_id for category images
+        let attribute_id = get_category_image_attribute_id(connection).await?;
 
-    let query = sqlx::query_as!(
-        MinMax,
-        "SELECT MIN(value_id) as `min!`, MAX(value_id) as `max!` FROM catalog_product_entity_media_gallery GROUP BY CEIL(value_id / ?)",
-        batch_size
-    );
-
-    Ok(query
+        let rows = sqlx::query(
+            "SELECT MIN(value_id) as min, MAX(value_id) as max FROM catalog_category_entity_varchar
+             WHERE attribute_id = ? AND value IS NOT NULL AND value != ''
+             GROUP BY CEIL(value_id / ?)"
+        )
+        .bind(attribute_id)
+        .bind(batch_size)
         .fetch_all(connection)
-        .await?
-        .into_iter()
-        .map(|item| (item.min as u64, item.max as u64))
-        .collect())
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| (row.get::<i32, _>("min") as u64, row.get::<i32, _>("max") as u64))
+            .collect())
+    } else {
+        // For product images, use the original query
+        let rows = sqlx::query(
+            "SELECT MIN(value_id) as min, MAX(value_id) as max FROM catalog_product_entity_media_gallery GROUP BY CEIL(value_id / ?)"
+        )
+        .bind(batch_size)
+        .fetch_all(connection)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| (row.get::<u32, _>("min") as u64, row.get::<u32, _>("max") as u64))
+            .collect())
+    }
 }
 
 impl DownloadProgress for ProgressBar {
@@ -103,7 +151,7 @@ async fn main() -> anyhow::Result<()> {
     let options = Options::try_parse()?;
     let mut connection = MySqlConnection::connect(&options.database_url).await?;
     let mut http = HttpPool::new();
-    let mut progress_bar = ProgressBar::new(total(&mut connection).await?);
+    let mut progress_bar = ProgressBar::new(total(&mut connection, options.category_images).await?);
 
     let download_config = Arc::new(DownloadConfig {
         base_url: options.base_url.into(),
@@ -111,26 +159,58 @@ async fn main() -> anyhow::Result<()> {
         user_agent: options.user_agent,
         clients: options.max_clients,
         verbose: options.verbose,
+        is_category: options.category_images,
     });
 
-    struct Image {
-        value: String,
-    }
+    for (min, max) in ranges(&mut connection, options.batch_size, options.category_images).await? {
+        let images = if options.category_images {
+            // Get the attribute_id for category images
+            let attribute_id = get_category_image_attribute_id(&mut connection).await?;
 
-    for (min, max) in ranges(&mut connection, options.batch_size).await? {
-        let query = sqlx::query_as!(
-            Image,
-            "SELECT value as `value!` FROM catalog_product_entity_media_gallery WHERE value_id BETWEEN ? AND ?",
-            min,
-            max
-        );
-
-        let images = query
+            // Query for category images
+            println!("Fetching category images with attribute_id {} between value_id {} and {}", attribute_id, min, max);
+            let rows = sqlx::query(
+                "SELECT value FROM catalog_category_entity_varchar
+                 WHERE attribute_id = ? AND value_id BETWEEN ? AND ?
+                 AND value IS NOT NULL AND value != ''"
+            )
+            .bind(attribute_id)
+            .bind(min)
+            .bind(max)
             .fetch_all(&mut connection)
-            .await?
-            .into_iter()
-            .map(|v| v.value);
-        http.download(images, &mut progress_bar, download_config.clone())
+            .await?;
+
+            println!("Found {} category images in this batch", rows.len());
+            if !rows.is_empty() {
+                println!("Sample image path: {}", rows[0].get::<String, _>("value"));
+            }
+
+            rows
+                .into_iter()
+                .map(|row| row.get::<String, _>("value"))
+                .collect::<Vec<String>>()
+        } else {
+            // Query for product images
+            let rows = sqlx::query(
+                "SELECT value FROM catalog_product_entity_media_gallery WHERE value_id BETWEEN ? AND ?"
+            )
+            .bind(min)
+            .bind(max)
+            .fetch_all(&mut connection)
+            .await?;
+
+            println!("Found {} product images in this batch", rows.len());
+            if !rows.is_empty() {
+                println!("Sample image path: {}", rows[0].get::<String, _>("value"));
+            }
+
+            rows
+                .into_iter()
+                .map(|row| row.get::<String, _>("value"))
+                .collect::<Vec<String>>()
+        };
+
+        http.download(images.into_iter(), &mut progress_bar, download_config.clone())
             .await?
     }
 

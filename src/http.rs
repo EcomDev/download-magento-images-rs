@@ -32,6 +32,7 @@ pub(crate) struct DownloadConfig {
     pub user_agent: String,
     pub clients: u16,
     pub verbose: bool,
+    pub is_category: bool,
 }
 
 pub(crate) trait DownloadProgress {
@@ -175,24 +176,39 @@ impl DownloadConfig {
                 let binding = image.to_string_lossy();
                 let file_name_str = binding.trim_start_matches('/');
 
-                // Extract just the filename part
-                let file_name = if let Some(name) = image.file_name() {
-                    name.to_string_lossy().to_string()
+                // If this is a category image, the path is already correct in the database
+                if self.is_category {
+                    // Category images are stored with their full path in the database
+                    // Just need to ensure we have the correct base URL
+                    if file_name_str.starts_with("media/") {
+                        // If the path already includes 'media/', remove it to avoid duplication
+                        let path = file_name_str.trim_start_matches("media/");
+                        format!("{base_url}/{}", path)
+                    } else {
+                        // Otherwise, use the path as is
+                        format!("{base_url}/{}", file_name_str)
+                    }
                 } else {
-                    // If we can't get the filename, use the whole path
-                    file_name_str.to_string()
-                };
+                    // For product images, we need to construct the path with the Magento-style directory structure
+                    // Extract just the filename part
+                    let file_name = if let Some(name) = image.file_name() {
+                        name.to_string_lossy().to_string()
+                    } else {
+                        // If we can't get the filename, use the whole path
+                        file_name_str.to_string()
+                    };
 
-                // Create the Magento-style URL path
-                if file_name.len() >= 2 {
-                    let first_char = &file_name[0..1];
-                    let second_char = &file_name[1..2];
-                    format!("{base_url}/catalog/product/{}/{}/{}", first_char, second_char, file_name)
-                } else if file_name.len() == 1 {
-                    let first_char = &file_name[0..1];
-                    format!("{base_url}/catalog/product/{}/{}", first_char, file_name)
-                } else {
-                    format!("{base_url}/catalog/product/{}", file_name)
+                    // Create the Magento-style URL path for product images
+                    if file_name.len() >= 2 {
+                        let first_char = &file_name[0..1];
+                        let second_char = &file_name[1..2];
+                        format!("{base_url}/catalog/product/{}/{}/{}", first_char, second_char, file_name)
+                    } else if file_name.len() == 1 {
+                        let first_char = &file_name[0..1];
+                        format!("{base_url}/catalog/product/{}/{}", first_char, file_name)
+                    } else {
+                        format!("{base_url}/catalog/product/{}", file_name)
+                    }
                 }
             },
         }
@@ -206,31 +222,54 @@ impl DownloadConfig {
         let binding = image.to_string_lossy();
         let file_name_str = binding.trim_start_matches('/');
 
-        // Extract just the filename part
-        let file_name = if let Some(name) = image.file_name() {
-            name.to_string_lossy().to_string()
-        } else {
-            // If we can't get the filename, use the whole path
-            file_name_str.to_string()
-        };
+        if self.is_category {
+            // For category images, use the path from the database but ensure it's relative
+            // Category images are stored with paths like '/media/catalog/category/image.jpg'
+            // or 'media/catalog/category/image.jpg'
 
-        // Create the Magento-style directory structure
-        path_buf.push("catalog/product");
+            // Remove 'media/' prefix if it exists to avoid duplication
+            let clean_path = if file_name_str.starts_with("media/") {
+                file_name_str.trim_start_matches("media/")
+            } else {
+                file_name_str
+            };
 
-        if file_name.len() >= 1 {
-            let first_char = &file_name[0..1];
-            path_buf.push(first_char);
-
-            if file_name.len() >= 2 {
-                let second_char = &file_name[1..2];
-                path_buf.push(second_char);
+            // Split the path into components and add them to the path_buf
+            for component in clean_path.split('/') {
+                if !component.is_empty() {
+                    path_buf.push(component);
+                }
             }
+
+            path_buf
+        } else {
+            // For product images, use the Magento-style directory structure
+            // Extract just the filename part
+            let file_name = if let Some(name) = image.file_name() {
+                name.to_string_lossy().to_string()
+            } else {
+                // If we can't get the filename, use the whole path
+                file_name_str.to_string()
+            };
+
+            // Create the Magento-style directory structure for product images
+            path_buf.push("catalog/product");
+
+            if file_name.len() >= 1 {
+                let first_char = &file_name[0..1];
+                path_buf.push(first_char);
+
+                if file_name.len() >= 2 {
+                    let second_char = &file_name[1..2];
+                    path_buf.push(second_char);
+                }
+            }
+
+            // Add the filename itself
+            path_buf.push(&file_name);
+
+            path_buf
         }
-
-        // Add the filename itself
-        path_buf.push(&file_name);
-
-        path_buf
     }
 }
 
