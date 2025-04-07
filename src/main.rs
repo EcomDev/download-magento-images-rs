@@ -30,6 +30,10 @@ struct Options {
     #[arg(short = 'b', long, default_value_t = 10000)]
     batch_size: u16,
 
+    /// Enable verbose output
+    #[arg(short = 'v', long, default_value_t = false)]
+    verbose: bool,
+
     #[arg(
         short = 'd',
         long,
@@ -106,6 +110,7 @@ async fn main() -> anyhow::Result<()> {
         base_path: options.base_path,
         user_agent: options.user_agent,
         clients: options.max_clients,
+        verbose: options.verbose,
     });
 
     struct Image {
