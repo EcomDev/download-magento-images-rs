@@ -6,9 +6,11 @@ permissions:
   attestations: write
 
 on:
-  release:
-    types: [published]
-
+  workflow_call:
+    inputs:
+      releases:
+        required: true
+        description: Release to use for uploading
 env:
   PUBLISH_BINARY_NAMES: ecomdev-download-magento-images
   CARGO_INCREMENTAL: 0
@@ -26,10 +28,10 @@ defaults:
 jobs:
   upload-assets:
     name: ${{ matrix.target }}
-    if: github.repository_owner == 'MyOwner' && startsWith(github.event.release.name, 'my-bin-v')
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
+        releases: ${{ inputs.releases }}
         include:
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-22.04
